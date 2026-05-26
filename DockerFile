@@ -1,0 +1,45 @@
+# ==============================================================================
+# Enterprise Docker Blueprint: DistilBERT Text Classification Pipeline
+# ==============================================================================
+
+# Use an official lightweight Python base image optimized for production
+FROM python:3.10-slim
+
+# Set system environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on
+
+# Set up the internal application workspace container path
+WORKDIR /app
+
+# Install critical system level tools required for basic python building dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Layer Optimization: Copy only requirements first to leverage Docker layer caching
+COPY requirements.txt .
+
+# Install dependencies directly into the global container context
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the core package configuration details and the source tree
+COPY setup.py .
+COPY config/ config/
+COPY src/ src/
+
+# Install the local src/ directory package as an editable production distribution
+RUN pip install -e .
+
+# Expose the network communication port explicitly reserved for Streamlit UI traffic
+EXPOSE 8501
+
+# Production Defensive Check: Add a lightweight container orchestration health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+# Launch the Streamlit dashboard server on container entry initialization
+ENTRYPOINT ["streamlit", "run", "src/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
